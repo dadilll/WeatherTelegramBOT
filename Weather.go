@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	bot, err := tgbotapi.NewBotAPI("API_KEY_TOKEN")
+	bot, err := tgbotapi.NewBotAPI("6699865318:AAHPdmYkNvFZgCGITlHpJg7oo4Z18c51GaI")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -113,6 +113,9 @@ func getTodayWeather(location string) (string, error) {
 		return "", err
 	}
 
+	// Извлекаем заголовок
+	header := strings.TrimSpace(doc.Find("h5").First().Text())
+
 	var weatherDetails []string
 	doc.Find(".row.small-collapse.medium-uncollapse.align-middle").Each(func(i int, s *goquery.Selection) {
 		time := s.Find(".smedium-1.column.time.text-center.medium-text-left .value").Text()
@@ -130,8 +133,8 @@ func getTodayWeather(location string) (string, error) {
 		weatherDetails = append(weatherDetails, "---------------------")
 	})
 
-	header := fmt.Sprintf("🌤️ Погода на сегодня в %s 🌤️\n\n", location)
-	response := header + strings.Join(weatherDetails, "\n")
+	headerText := fmt.Sprintf("%s сегодня по часам\n\n", header)
+	response := headerText + strings.Join(weatherDetails, "\n")
 	return response, nil
 }
 
@@ -163,7 +166,11 @@ func getWeekWeather(location string) (string, error) {
 		return "", err
 	}
 
+	// Извлекаем заголовок
+	header := strings.TrimSpace(doc.Find("h1.text-center.medium-text-left").First().Text())
+
 	var forecast strings.Builder
+
 	doc.Find(".forecast-week-overview .column.text-center").Each(func(i int, s *goquery.Selection) {
 		day := s.Find(".weekday").Text()
 		maxTemp := s.Find("span.value[title='Макс.']").Text()
@@ -175,11 +182,11 @@ func getWeekWeather(location string) (string, error) {
 	})
 
 	if forecast.Len() == 0 {
-		return "", fmt.Errorf("Не удалось получить прогноз погоды. Попробуйте еще раз с другим названием.")
+		return "", fmt.Errorf("не удалось получить прогноз погоды. Попробуйте еще раз с другим названием.")
 	}
 
-	header := fmt.Sprintf("📅 Прогноз на неделю в %s 📅\n\n", location)
-	return header + forecast.String(), nil
+	headerText := fmt.Sprintf("%s\n\n", header)
+	return headerText + forecast.String(), nil
 }
 
 // getTimeEmoji returns an emoji based on the hour of the day
@@ -222,8 +229,8 @@ func getWeatherEmoji(condition string) string {
 	case strings.Contains(condition, "снег"):
 		return "❄️"
 	case strings.Contains(condition, "гроза"):
-		return "⛈"
+		return "🌩"
 	default:
-		return ""
+		return "🌤"
 	}
 }
