@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	bot, err := tgbotapi.NewBotAPI("6699865318:AAHPdmYkNvFZgCGITlHpJg7oo4Z18c51GaI")
+	bot, err := tgbotapi.NewBotAPI("")
 	if err != nil {
 		log.Fatal(err)
 	}
