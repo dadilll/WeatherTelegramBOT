@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -12,8 +14,18 @@ import (
 	tgbotapi "gopkg.in/telegram-bot-api.v4"
 )
 
+type WeatherData struct {
+	Condition     string
+	Temperature   string
+	WindSpeed     string
+	Precipitation string
+	Pressure      string
+	Visibility    string
+	Cloudiness    string
+}
+
 func main() {
-	bot, err := tgbotapi.NewBotAPI("6699865318:AAHPdmYkNvFZgCGITlHpJg7oo4Z18c51GaI")
+	bot, err := tgbotapi.NewBotAPI("6699865318:AAFZeuStbL37m07Qmod0iguI9H1jZlIYYU8")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -40,34 +52,40 @@ func main() {
 				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Используй команды /today <город> для погоды на сегодня и /week <город> для прогноза на неделю.")
 				bot.Send(msg)
 			default:
-				if strings.HasPrefix(update.Message.Text, "/today") {
-					location := strings.TrimSpace(strings.TrimPrefix(update.Message.Text, "/today"))
-					weatherText, err := getTodayWeather(location)
-					if err != nil {
-						log.Printf("Ошибка при получении погоды: %v", err)
-						msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при получении погоды.")
-						bot.Send(msg)
-						continue
-					}
-					msg := tgbotapi.NewMessage(update.Message.Chat.ID, weatherText)
-					bot.Send(msg)
-				} else if strings.HasPrefix(update.Message.Text, "/week") {
-					location := strings.TrimSpace(strings.TrimPrefix(update.Message.Text, "/week"))
-					forecastText, err := getWeekWeather(location)
-					if err != nil {
-						log.Printf("Ошибка при получении прогноза: %v", err)
-						msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при получении прогноза.")
-						bot.Send(msg)
-						continue
-					}
-					msg := tgbotapi.NewMessage(update.Message.Chat.ID, forecastText)
-					bot.Send(msg)
-				} else {
-					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Неизвестная команда. Попробуй /start или /help.")
-					bot.Send(msg)
-				}
+				handleWeatherCommands(bot, update.Message)
 			}
 		}
+	}
+}
+
+func handleWeatherCommands(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+	if strings.HasPrefix(message.Text, "/today") {
+		location := strings.TrimSpace(strings.TrimPrefix(message.Text, "/today"))
+		weatherText, err := getTodayWeather(location)
+		if err != nil {
+			log.Printf("Ошибка при получении погоды: %v", err)
+			msg := tgbotapi.NewMessage(message.Chat.ID, "Ошибка при получении погоды.")
+			bot.Send(msg)
+			return
+		}
+		msg := tgbotapi.NewMessage(message.Chat.ID, weatherText)
+		msg.ParseMode = tgbotapi.ModeHTML // Use HTML mode for rich formatting
+		bot.Send(msg)
+	} else if strings.HasPrefix(message.Text, "/week") {
+		location := strings.TrimSpace(strings.TrimPrefix(message.Text, "/week"))
+		forecastText, err := getWeekWeather(location)
+		if err != nil {
+			log.Printf("Ошибка при получении прогноза: %v", err)
+			msg := tgbotapi.NewMessage(message.Chat.ID, "Ошибка при получении прогноза.")
+			bot.Send(msg)
+			return
+		}
+		msg := tgbotapi.NewMessage(message.Chat.ID, forecastText)
+		msg.ParseMode = tgbotapi.ModeHTML // Use HTML mode for rich formatting
+		bot.Send(msg)
+	} else {
+		msg := tgbotapi.NewMessage(message.Chat.ID, "Неизвестная команда. Попробуй /start или /help.")
+		bot.Send(msg)
 	}
 }
 
@@ -87,7 +105,7 @@ func translateToEnglish(text string) (string, error) {
 
 func getTodayWeather(location string) (string, error) {
 	if location == "" {
-		return "", fmt.Errorf("название города не указано в запросе")
+		return "", errors.New("название города не указано в запросе")
 	}
 
 	translatedLocation, err := translateToEnglish(location)
@@ -95,7 +113,7 @@ func getTodayWeather(location string) (string, error) {
 		return "", err
 	}
 
-	url := fmt.Sprintf("https://www.meteoservice.ru/weather/today/%s", strings.ReplaceAll(strings.ToLower(translatedLocation), " ", "-"))
+	url := fmt.Sprintf("https://www.ventusky.com/ru/%s", strings.ReplaceAll(strings.ToLower(translatedLocation), " ", "-"))
 	log.Printf("Отправка запроса на URL: %s", url)
 
 	res, err := http.Get(url)
@@ -113,29 +131,29 @@ func getTodayWeather(location string) (string, error) {
 		return "", err
 	}
 
-	// Извлекаем заголовок
-	header := strings.TrimSpace(doc.Find("h5").First().Text())
+	var weatherData WeatherData
 
-	var weatherDetails []string
-	doc.Find(".row.small-collapse.medium-uncollapse.align-middle").Each(func(i int, s *goquery.Selection) {
-		time := s.Find(".smedium-1.column.time.text-center.medium-text-left .value").Text()
-		weatherCondition := s.Find(".column.text-center.medium-text-left.weather .column.show-for-smedium.text-left").Text()
-		temperature := s.Find(".small-2.smedium-1.columns.temperature.text-center .value").Text()
+	// Extract weather data
+	weatherData.Condition = strings.TrimSpace(doc.Find(".info_tables .big_ico_cell img").AttrOr("title", ""))
+	weatherData.Temperature = strings.TrimSpace(doc.Find(".info_tables .temperature").Text())
+	weatherData.WindSpeed = strings.TrimSpace(doc.Find(".info_tables .wind_ico").Text())
+	weatherData.Precipitation = strings.TrimSpace(doc.Find(".info_tables tr:contains('Осадки') b").Text())
+	weatherData.Pressure = strings.TrimSpace(doc.Find(".info_tables tr:contains('Атмосферное давление') b").Text())
+	weatherData.Visibility = strings.TrimSpace(doc.Find(".info_tables tr:contains('Видимость') b").Text())
+	weatherData.Cloudiness = strings.TrimSpace(doc.Find(".info_tables tr:contains('Облачность') b").Text())
 
-		time = fmt.Sprintf("%s:00", time)
+	// Format output as Markdown with emojis
+	var weatherDetails strings.Builder
+	weatherDetails.WriteString("*Погода сегодня:*\n")
+	weatherDetails.WriteString(fmt.Sprintf("- *Состояние:* %s %s\n", getWeatherEmoji(weatherData.Condition), weatherData.Condition))
+	weatherDetails.WriteString(fmt.Sprintf("- *Температура:* 🌡️ %s\n", weatherData.Temperature))
+	weatherDetails.WriteString(fmt.Sprintf("- *Скорость ветра:* 💨 %s\n", weatherData.WindSpeed))
+	weatherDetails.WriteString(fmt.Sprintf("- *Осадки:* %s %s\n", getEmojiForPrecipitation(weatherData.Precipitation), weatherData.Precipitation))
+	weatherDetails.WriteString(fmt.Sprintf("- *Атмосферное давление:* 🌬️ %s\n", weatherData.Pressure))
+	weatherDetails.WriteString(fmt.Sprintf("- *Видимость:* 👁️ %s\n", weatherData.Visibility))
+	weatherDetails.WriteString(fmt.Sprintf("- *Облачность:* %s %s\n", getEmojiForCloudiness(weatherData.Cloudiness), weatherData.Cloudiness))
 
-		timeEmoji := getTimeEmoji(time)
-		weatherEmoji := getWeatherEmoji(weatherCondition)
-
-		weatherDetails = append(weatherDetails, fmt.Sprintf("%s Время: %s", timeEmoji, time))
-		weatherDetails = append(weatherDetails, fmt.Sprintf("%s Погода: %s", weatherEmoji, weatherCondition))
-		weatherDetails = append(weatherDetails, fmt.Sprintf("🌡️ Температура: %s", temperature))
-		weatherDetails = append(weatherDetails, "---------------------")
-	})
-
-	headerText := fmt.Sprintf("%s сегодня по часам\n\n", header)
-	response := headerText + strings.Join(weatherDetails, "\n")
-	return response, nil
+	return weatherDetails.String(), nil
 }
 
 func getWeekWeather(location string) (string, error) {
@@ -148,7 +166,7 @@ func getWeekWeather(location string) (string, error) {
 		return "", err
 	}
 
-	url := fmt.Sprintf("https://www.meteoservice.ru/weather/week/%s", strings.ReplaceAll(strings.ToLower(translatedLocation), " ", "-"))
+	url := fmt.Sprintf("https://www.ventusky.com/ru/%s", strings.ReplaceAll(strings.ToLower(translatedLocation), " ", "-"))
 	log.Printf("Отправка запроса на URL: %s", url)
 
 	res, err := http.Get(url)
@@ -161,76 +179,97 @@ func getWeekWeather(location string) (string, error) {
 		return "", fmt.Errorf("ошибка запроса: %d %s", res.StatusCode, res.Status)
 	}
 
-	doc, err := goquery.NewDocumentFromReader(res.Body)
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return "", err
 	}
 
-	// Извлекаем заголовок
-	header := strings.TrimSpace(doc.Find("h1.text-center.medium-text-left").First().Text())
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(body)))
+	if err != nil {
+		return "", err
+	}
 
-	var forecast strings.Builder
+	var weatherDetails strings.Builder
 
-	doc.Find(".forecast-week-overview .column.text-center").Each(func(i int, s *goquery.Selection) {
-		day := s.Find(".weekday").Text()
-		maxTemp := s.Find("span.value[title='Макс.']").Text()
-		minTemp := s.Find("span.value[title='Мин.']").Text()
+	doc.Find("ul.menu li").Each(func(i int, s *goquery.Selection) {
+		day := strings.TrimSpace(s.Find("a").Contents().First().Text())
+		condition, _ := s.Find("img").Attr("title")
+		temperature := strings.TrimSpace(s.Find("a").Contents().Last().Text())
 
-		if day != "" && (maxTemp != "" || minTemp != "") {
-			forecast.WriteString(fmt.Sprintf("%s: Макс: %s, Мин: %s\n", day, maxTemp, minTemp))
+		if day != "" && condition != "" && temperature != "" {
+			weatherDetails.WriteString(fmt.Sprintf("<b>День: %s</b>\n", day))
+			weatherDetails.WriteString(fmt.Sprintf("<b>Погода:</b> %s %s\n", getWeatherEmoji(condition), condition))
+			weatherDetails.WriteString(fmt.Sprintf("<b>Температура:</b> %s\n\n", temperature))
 		}
 	})
 
-	if forecast.Len() == 0 {
+	if weatherDetails.Len() == 0 {
 		return "", fmt.Errorf("не удалось получить прогноз погоды. Попробуйте еще раз с другим названием.")
 	}
 
-	headerText := fmt.Sprintf("%s\n\n", header)
-	return headerText + forecast.String(), nil
-}
-
-// getTimeEmoji returns an emoji based on the hour of the day
-func getTimeEmoji(time string) string {
-	// Split the time string and get the hour part
-	hourStr := strings.Split(time, ":")[0]
-	hour, err := strconv.Atoi(hourStr)
-	if err != nil {
-		// Handle conversion error
-		fmt.Println("Ошибка преобразования времени:", err)
-		return ""
-	}
-
-	// Determine emoji based on the hour
-	switch {
-	case hour >= 0 && hour < 4:
-		return "🌙"
-	case hour >= 4 && hour < 11:
-		return "🌅"
-	case hour >= 11 && hour < 16:
-		return "🌞"
-	case hour >= 16 && hour < 19:
-		return "🌇"
-	case hour >= 19:
-		return "🌌"
-	default:
-		return ""
-	}
+	return weatherDetails.String(), nil
 }
 
 func getWeatherEmoji(condition string) string {
 	condition = strings.ToLower(condition)
 	switch {
 	case strings.Contains(condition, "ясно"):
-		return "☀️"
+		return "🌞"
 	case strings.Contains(condition, "облачно"):
-		return "🌥"
+		return "☁️"
 	case strings.Contains(condition, "дождь"):
-		return "🌧"
+		return "🌧️"
 	case strings.Contains(condition, "снег"):
 		return "❄️"
 	case strings.Contains(condition, "гроза"):
-		return "🌩"
+		return "⛈️"
+	case strings.Contains(condition, "туман"):
+		return "🌫️"
+	case strings.Contains(condition, "чистое небо"):
+		return "☀️"
+	case strings.Contains(condition, "смешанный с дождевыми дождями"):
+		return "🌦️"
 	default:
-		return "🌤"
+		return "🌤️" // Для всех остальных случаев
+	}
+}
+
+// Функция getEmojiForPrecipitation возвращает эмодзи для осадков
+func getEmojiForPrecipitation(precipitation string) string {
+	precipitation = strings.ToLower(precipitation)
+	precipitationValue, err := strconv.Atoi(strings.TrimSuffix(precipitation, " mm"))
+	if err != nil {
+		return "" // Вернуть пустую строку, если не удается преобразовать в число
+	}
+
+	switch {
+	case precipitationValue > 20:
+		return "🌧️" // Сильный дождь
+	case precipitationValue > 5:
+		return "🌦️" // Легкий дождь
+	case precipitationValue > 0:
+		return "🌂" // Небольшие осадки
+	default:
+		return "" // Без осадков
+	}
+}
+
+// Функция getEmojiForCloudiness возвращает эмодзи для облачности на основе процента облачности
+func getEmojiForCloudiness(cloudiness string) string {
+	cloudiness = strings.ToLower(cloudiness)
+	cloudinessValue, err := strconv.Atoi(strings.TrimSuffix(cloudiness, " %"))
+	if err != nil {
+		return "" // Вернуть пустую строку, если не удается преобразовать в число
+	}
+
+	switch {
+	case cloudinessValue > 75:
+		return "☁️" // Пасмурно
+	case cloudinessValue > 50:
+		return "🌥️" // Облачно
+	case cloudinessValue > 25:
+		return "🌤️" // Переменная облачность
+	default:
+		return "☀️" // Ясно
 	}
 }
