@@ -25,7 +25,7 @@ type WeatherData struct {
 }
 
 func main() {
-	bot, err := tgbotapi.NewBotAPI("6699865318:AAFZeuStbL37m07Qmod0iguI9H1jZlIYYU8")
+	bot, err := tgbotapi.NewBotAPI("")
 	if err != nil {
 		log.Fatal(err)
 	}
