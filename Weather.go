@@ -22,10 +22,11 @@ type WeatherData struct {
 	Pressure      string
 	Visibility    string
 	Cloudiness    string
+	Humidity      string
 }
 
 func main() {
-	bot, err := tgbotapi.NewBotAPI("")
+	bot, err := tgbotapi.NewBotAPI("YOUR_TELEGRAM_BOT_TOKEN") // Create a new bot API client
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -103,6 +104,12 @@ func translateToEnglish(text string) (string, error) {
 	return translated, nil
 }
 
+func appendIfNotEmpty(builder *strings.Builder, label, value, emoji string) {
+	if value != "" {
+		builder.WriteString(fmt.Sprintf("-  %s: %s %s\n", label, emoji, value))
+	}
+}
+
 func getTodayWeather(location string) (string, error) {
 	if location == "" {
 		return "", errors.New("название города не указано в запросе")
@@ -141,21 +148,23 @@ func getTodayWeather(location string) (string, error) {
 	weatherData.Pressure = strings.TrimSpace(doc.Find(".info_tables tr:contains('Атмосферное давление') b").Text())
 	weatherData.Visibility = strings.TrimSpace(doc.Find(".info_tables tr:contains('Видимость') b").Text())
 	weatherData.Cloudiness = strings.TrimSpace(doc.Find(".info_tables tr:contains('Облачность') b").Text())
+	weatherData.Humidity = strings.TrimSpace(doc.Find(".info_tables tr:contains('Влажность') b").Text())
 
 	// Format output as Markdown with emojis
 	var weatherDetails strings.Builder
 	weatherDetails.WriteString("*Погода сегодня:*\n")
-	weatherDetails.WriteString(fmt.Sprintf("- *Состояние:* %s %s\n", getWeatherEmoji(weatherData.Condition), weatherData.Condition))
-	weatherDetails.WriteString(fmt.Sprintf("- *Температура:* 🌡️ %s\n", weatherData.Temperature))
-	weatherDetails.WriteString(fmt.Sprintf("- *Скорость ветра:* 💨 %s\n", weatherData.WindSpeed))
-	weatherDetails.WriteString(fmt.Sprintf("- *Осадки:* %s %s\n", getEmojiForPrecipitation(weatherData.Precipitation), weatherData.Precipitation))
-	weatherDetails.WriteString(fmt.Sprintf("- *Атмосферное давление:* 🌬️ %s\n", weatherData.Pressure))
-	weatherDetails.WriteString(fmt.Sprintf("- *Видимость:* 👁️ %s\n", weatherData.Visibility))
-	weatherDetails.WriteString(fmt.Sprintf("- *Облачность:* %s %s\n", getEmojiForCloudiness(weatherData.Cloudiness), weatherData.Cloudiness))
+
+	appendIfNotEmpty(&weatherDetails, "Состояние", weatherData.Condition, getWeatherEmoji(weatherData.Condition))
+	appendIfNotEmpty(&weatherDetails, "Температура", weatherData.Temperature, "🌡️")
+	appendIfNotEmpty(&weatherDetails, "Скорость ветра", weatherData.WindSpeed, "💨")
+	appendIfNotEmpty(&weatherDetails, "Осадки", weatherData.Precipitation, getEmojiForPrecipitation(weatherData.Precipitation))
+	appendIfNotEmpty(&weatherDetails, "Атмосферное давление", weatherData.Pressure, "🌬️")
+	appendIfNotEmpty(&weatherDetails, "Видимость", weatherData.Visibility, "👁️")
+	appendIfNotEmpty(&weatherDetails, "Облачность", weatherData.Cloudiness, getEmojiForCloudiness(weatherData.Cloudiness))
+	appendIfNotEmpty(&weatherDetails, "Влажность", weatherData.Humidity, getEmojiForHumidity(weatherData.Humidity))
 
 	return weatherDetails.String(), nil
 }
-
 func getWeekWeather(location string) (string, error) {
 	if location == "" {
 		return "", fmt.Errorf("название города не указано в запросе")
@@ -198,7 +207,7 @@ func getWeekWeather(location string) (string, error) {
 
 		if day != "" && condition != "" && temperature != "" {
 			weatherDetails.WriteString(fmt.Sprintf("<b>День: %s</b>\n", day))
-			weatherDetails.WriteString(fmt.Sprintf("<b>Погода:</b> %s %s\n", getWeatherEmoji(condition), condition))
+			weatherDetails.WriteString(fmt.Sprintf("<b>Погода:</b> %s  %s\n", getWeatherEmoji(condition), condition))
 			weatherDetails.WriteString(fmt.Sprintf("<b>Температура:</b> %s\n\n", temperature))
 		}
 	})
@@ -215,7 +224,9 @@ func getWeatherEmoji(condition string) string {
 	switch {
 	case strings.Contains(condition, "ясно"):
 		return "🌞"
-	case strings.Contains(condition, "облачно"):
+	case strings.Contains(condition, "облачноcть") || strings.Contains(condition, "облачно"):
+		return "☁️"
+	case strings.Contains(condition, "пасмурная") || strings.Contains(condition, "пасмурно"):
 		return "☁️"
 	case strings.Contains(condition, "дождь"):
 		return "🌧️"
@@ -230,7 +241,7 @@ func getWeatherEmoji(condition string) string {
 	case strings.Contains(condition, "смешанный с дождевыми дождями"):
 		return "🌦️"
 	default:
-		return "🌤️" // Для всех остальных случаев
+		return "" // Для всех остальных случаев
 	}
 }
 
@@ -271,5 +282,26 @@ func getEmojiForCloudiness(cloudiness string) string {
 		return "🌤️" // Переменная облачность
 	default:
 		return "☀️" // Ясно
+	}
+}
+
+func getEmojiForHumidity(humidity string) string {
+	// Удаляем знак процента и преобразуем в число
+	humidityValue, err := strconv.Atoi(strings.TrimSuffix(humidity, " %"))
+	if err != nil {
+		return "" // Возвращаем пустую строку в случае ошибки
+	}
+
+	switch {
+	case humidityValue < 30:
+		return "🌵" // Очень низкая влажность
+	case humidityValue < 50:
+		return "🌴" // Низкая влажность
+	case humidityValue < 70:
+		return "🌳" // Средняя влажность
+	case humidityValue < 90:
+		return "🌲" // Высокая влажность
+	default:
+		return "💧" // Очень высокая влажность
 	}
 }

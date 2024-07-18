@@ -35,7 +35,7 @@ func TestGetTodayWeather(t *testing.T) {
 }
 
 func TestGetWeekWeather(t *testing.T) {
-	locations := []string{"Самара", "Екатеринбург"}
+	locations := []string{"Самара", "Москва"}
 
 	for _, location := range locations {
 		t.Run(location, func(t *testing.T) {
